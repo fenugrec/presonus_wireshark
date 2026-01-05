@@ -20,5 +20,7 @@ Based on info from
 - https://git.kernel.org/pub/scm/linux/kernel/git/tiwai/sound.git/tree/sound/usb/mixer_s1810c.c
 - https://github.com/royvegard/baton_studio/blob/main/src/lib.rs
 
+Very much WIP, and could use some help; parsing USB in wireshark/lua is new to me.
 
+![sample session](samples/demo1.gif)
 
