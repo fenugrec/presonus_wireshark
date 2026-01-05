@@ -100,17 +100,28 @@ sel_table = {
 	[0x65] = {name="output"},
 }
 
-SC1810C_CMD_REQ = 160
+req_codes = {
+	[160] = {name="SC1810C_CMD_REQ"},
+	[161] = {name="SC1810C_SET_STATE_REQ"},
+	[162] = {name="SC1810C_GET_STATE_REQ"},
+}
+
 SC1810C_CMD_F1 = 0x50617269
 SC1810C_CMD_F2 = 0x14
 
-SC1810C_SET_STATE_REQ = 161
 SC1810C_SET_STATE_F1 = 0x64656D73
 SC1810C_SET_STATE_F2 = 0xF4
 
-SC1810C_GET_STATE_REQ = 162
 SC1810C_GET_STATE_F1 = SC1810C_SET_STATE_F1
 SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
+
+-- ****************************************
+-- field extractors so we can interpret frames 'correctly'
+usb_ut = Field.new("usb.urb_type")
+usb_tt = Field.new("usb.transfer_type")
+usb_dir = Field.new("usb.endpoint_address.direction")
+usb_breq = Field.new("usb.setup.bRequest")
+usb_respdata = Field.new("usb.control.Response")
 
 -- ****************************************
 -- 'core' of the dissector
@@ -119,17 +130,54 @@ SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
 --
 -- CTL packets : sizeof=7*uint32 =28 B?
 -- STATE packets : sizeof=63*uint32 = 252B
---
--- shit, this gets called with the Setup data as well when URB_CONTROL OUT.
--- Not sure how to get the first 7 bytes to be parsed by the basic USB decoder...
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
 	local log = initLog(tree,studiousb_protocol)
-	log(string.format('len %u', length))
+-- ok	log(string.format('len %u', length))
+-- X	if pinfo.usb then log('usb') end
+-- ok	if pinfo.visited then log('vis') end
+	urbt = usb_ut().value
+	usbf = usb_tt().value
+	usbdir = usb_dir().value
+	log(string.format("urbtype %u, tt %u, dir %u", urbt, usbf, usbdir))
 
+	-- TODO: how to use nice enums like 'URB_COMPLETE' instead of hardcoded val ?
+	if (urbt == 83) and (usbf == 2) and (usbdir == 0) then
+		usbr = usb_breq().value
+		log(string.format('URB_SUBMIT CTL OUT'))
+		annotate_req(pinfo, usbr)
+		return length
+	end
+	if (urbt == 83) and (usbf == 2) and (usbdir == 1) then
+		usbr = usb_breq().value
+		log(string.format('URB_SUBMIT CTL IN'))
+		annotate_req(pinfo, usbr)
+		return length
+	end
+	if (urbt == 67) and (usbf == 2) and (usbdir == 1) then
+		usb_resp = usb_respdata()
+		log(string.format('URB_COMPLETE CTL IN; %u', usb_resp.len))
+		pinfo.cols.protocol = studiousb_protocol.name
+		return dis_state_response(usb_resp.range, pinfo, tree)
+	end
+end
+
+-- if URB had a bRequest value, annotate Info colum
+function annotate_req(pinfo, breq)
+	pinfo.cols.protocol = studiousb_protocol.name
+	req = req_codes[breq]
+	if req then
+		pinfo.cols.info:append(string.format('; %s', req.name))
+	else
+		pinfo.cols.info:append(string.format('req %03u(UNKNOWN!)', breq))
+	end
+end
+
+
+function dis_state_response(buf, pinfo, tree)
+	length = buf:len()
 	if length ~= 252 then return 0 end
 
-	pinfo.cols.protocol = studiousb_protocol.name
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
 
 	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
@@ -139,7 +187,7 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 
 	subtree:add(sel, buf(0,4))
 	selstring = sel_table[selector].name
-	pinfo.cols.info:append(string.format(';sel %X(%s)', selector, selstring))
+	pinfo.cols.info:append(string.format(';sel %X(%s) state response', selector, selstring))
 	subtree:add(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
 	-- TODO : validate F1 or other
 	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
@@ -167,10 +215,14 @@ end
 set_plugin_info({
 	version = "1.0",
 	author = "fenugrec",
+	description = "Presonus Studio USB audio interface"
 })
+
 --- menu View->Internal->Dissector tab
 --- also see epan/dissectors/packet-usb.c . Clear as mud
 --- Also doesn't work well
-DissectorTable.get("usb.control"):add(0xffff, studiousb_protocol)
+--DissectorTable.get("usb.control"):add(0xffff, studiousb_protocol)
 --DissectorTable.get("usb.protocol"):add(0x80ef0201, studiousb_protocol)
+
+register_postdissector(studiousb_protocol)
 
