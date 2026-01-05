@@ -6,6 +6,10 @@
 -- to reload : Analyze->reload LUA plugins
 -- 
 -- tested on 1824c traffic
+--
+-- sources:
+-- https://github.com/royvegard/baton_studio/blob/main/src/lib.rs
+-- https://git.kernel.org/pub/scm/linux/kernel/git/tiwai/sound.git/tree/sound/usb/mixer_s1810c.c
 
 
 studiousb_protocol = Proto("studiousb", "Presonus StudioUSB protocol")
@@ -22,6 +26,39 @@ u32 = ProtoField.uint32("studiousb.u32", "generic u32", base.HEX)
 bflag = ProtoField.bool("studiousb.bflag", "bool")
 
 studiousb_protocol.fields = { seq_id, sel, u32, bflag}
+
+-- not sure if this is a great idea ; add proper unique fields for everything.
+-- One advantage is to allow plotting values in wireshark !
+states_in={}
+states_spdif={}
+states_adat={}
+states_daw={}
+states_bus={}
+for i = 1,2 do
+	states_spdif[i] = ProtoField.uint32(string.format("studiousb.spdif%u",i), string.format("SPDIF %u", i), base.HEX)
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = states_spdif[i]
+end
+for i = 1,8 do
+	states_in[i] = ProtoField.uint32(string.format("studiousb.in_%u",i), string.format("IN %u", i), base.HEX)
+	states_adat[i] = ProtoField.uint32(string.format("studiousb.adat%u",i), string.format("ADAT %u", i), base.HEX)
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = states_in[i]
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = states_adat[i]
+end
+for i = 1,18 do
+	states_daw[i] = ProtoField.uint32(string.format("studiousb.daw%u",i), string.format("DAW %u", i), base.HEX)
+	states_bus[i] = ProtoField.uint32(string.format("studiousb.bus%u",i), string.format("BUS %u", i), base.HEX)
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = states_daw[i]
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = states_bus[i]
+end
+
+-- automate some of this. start_idx is 0-based, but pfield_table is 1-based to match human-readable channel numbers...
+parse_fields = function (buf, subtree, pfield_table, start_idx, num_fields, name)
+	temp_t = subtree:add(studiousb_protocol, buf(start_idx*4,num_fields*4), name)
+	for i = 1, num_fields do
+		temp_t:add_le(pfield_table[i], buf((start_idx + i - 1)*4, 4))
+	end
+	return temp_t
+end
 
 -- ******************* logging
 -- sauce: https://wiki.wireshark.org/Lua/Examples/PostDissector
@@ -100,8 +137,14 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
 	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
 
-	-- other fields : label if known
-	for field_idx = 4, 62 do
+	-- make subtrees for groups of channel volumes
+	in_t = parse_fields(buf, subtree, states_in, 4, 8, "IN")
+	spdif_t = parse_fields(buf, subtree, states_spdif, 12, 2, "SPDIF")
+	adat_t = parse_fields(buf, subtree, states_adat, 14, 8, "ADAT")
+	daw_t = parse_fields(buf, subtree, states_daw, 22, 18, "DAW")
+	bus_t = parse_fields(buf, subtree, states_bus, 40, 18, "BUS")
+
+	for field_idx = 58, 62 do
 		field_text = statefield_table[field_idx]
 		if not field_text then
 			subtree:add_le(u32, buf(field_idx*4,4)):append_text(string.format(' (field #%u)', field_idx))
