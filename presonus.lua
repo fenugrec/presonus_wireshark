@@ -19,7 +19,7 @@ sel = ProtoField.uint32("studiousb.sel" , "sel" , base.DEC, {
 	[0x65] = "output",
 })
 u32 = ProtoField.uint32("studiousb.u32", "generic u32", base.HEX)
-bflag = ProtoField.bool("studiousb.bflag", "bool", base.NONE, {[1] = "0", [2] = "1"})
+bflag = ProtoField.bool("studiousb.bflag", "bool")
 
 studiousb_protocol.fields = { seq_id, sel, u32, bflag}
 
@@ -101,8 +101,13 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
 
 	-- other fields : label if known
-	for field_idx,field_text in pairs(statefield_table) do
-		subtree:add(bflag, buf(field_idx*4,4)):append_text(string.format(' (%s)', field_text))
+	for field_idx = 4, 62 do
+		field_text = statefield_table[field_idx]
+		if not field_text then
+			subtree:add_le(u32, buf(field_idx*4,4)):append_text(string.format(' (field #%u)', field_idx))
+		else
+			subtree:add(bflag, buf(field_idx*4,4)):append_text(string.format(' (%s)', field_text))
+		end
 	end
 --	-- info colum : always start with seq number
 --	pinfo.cols.info = string.format('seq=%u', seq_id_uint)
