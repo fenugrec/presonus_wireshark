@@ -5,7 +5,8 @@
 -- place or symlink in $HOME/.local/lib/wireshark/plugins
 -- to reload : Analyze->reload LUA plugins
 -- 
--- tested on 1824c traffic
+-- should support "studio USB" series (may require minor tweaks)
+-- Tested on 1824c traffic
 --
 -- sources:
 -- https://github.com/royvegard/baton_studio/blob/main/src/lib.rs
@@ -59,7 +60,8 @@ parse_fields = function (buf, subtree, pfield_table, start_idx, num_fields, name
 	return temp_t
 end
 
--- these are indices inside the uint32[63] array composing the 'state' packet
+-- these are remaining indices (after level meters defined above),
+-- inside the uint32[63] array composing the 'state' packet
 switch_table = {
 	[58] = {name="48V SW", flagname="48v_sw", pf=nil},
 	[59] = {name="Line SW", flagname="line_sw", pf=nil},
@@ -90,6 +92,8 @@ end
 
 -- ********************************
 -- some defs, taken from kernel driver
+
+-- field 'a'
 sel_table = {
 	[0] = {name="device"},
 	[0x64] = {name="mixer"},
@@ -110,7 +114,7 @@ SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
 
 -- ****************************************
 -- 'core' of the dissector
--- loosely based on "fpm.lua" example from wireshark wiki and netdaq dissector
+-- loosely based on netdaq dissector
 -- ret 0 if error, (len) if succesfully parsed
 --
 -- CTL packets : sizeof=7*uint32 =28 B?
@@ -120,9 +124,10 @@ SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
 -- Not sure how to get the first 7 bytes to be parsed by the basic USB decoder...
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
-	if length ~= 252 then return 0 end
 	local log = initLog(tree,studiousb_protocol)
 	log(string.format('len %u', length))
+
+	if length ~= 252 then return 0 end
 
 	pinfo.cols.protocol = studiousb_protocol.name
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
