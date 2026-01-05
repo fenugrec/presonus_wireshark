@@ -23,9 +23,8 @@ sel = ProtoField.uint32("studiousb.sel" , "sel" , base.DEC, {
 	[0x65] = "output",
 })
 u32 = ProtoField.uint32("studiousb.u32", "generic u32", base.HEX)
-bflag = ProtoField.bool("studiousb.bflag", "bool")
 
-studiousb_protocol.fields = { seq_id, sel, u32, bflag}
+studiousb_protocol.fields = { seq_id, sel, u32}
 
 -- not sure if this is a great idea ; add proper unique fields for everything.
 -- One advantage is to allow plotting values in wireshark !
@@ -58,6 +57,19 @@ parse_fields = function (buf, subtree, pfield_table, start_idx, num_fields, name
 		temp_t:add_le(pfield_table[i], buf((start_idx + i - 1)*4, 4))
 	end
 	return temp_t
+end
+
+-- these are indices inside the uint32[63] array composing the 'state' packet
+switch_table = {
+	[58] = {name="48V SW", flagname="48v_sw", pf=nil},
+	[59] = {name="Line SW", flagname="line_sw", pf=nil},
+	[60] = {name="Mute SW", flagname="mute_sw", pf=nil},
+	[61] = {name="Mono SW", flagname="mono_sw", pf=nil},
+	[62] = {name="A/B SW", flagname="ab_sw", pf=nil},
+}
+for _,s in pairs(switch_table) do
+	s.pf = ProtoField.bool(string.format('studiousb.%s', s.flagname), s.name)
+	studiousb_protocol.fields[#studiousb_protocol.fields + 1] = s.pf
 end
 
 -- ******************* logging
@@ -95,15 +107,6 @@ SC1810C_SET_STATE_F2 = 0xF4
 SC1810C_GET_STATE_REQ = 162
 SC1810C_GET_STATE_F1 = SC1810C_SET_STATE_F1
 SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
-
--- these are indices inside the uint32[63] array composing the 'state' packet
-statefield_table = {
-	[58] = "48V SW",
-	[59] = "Line SW",
-	[60] = "Mute SW",
-	[61] = "Mono SW",
-	[62] = "A/B SW",
-}
 
 -- ****************************************
 -- 'core' of the dissector
@@ -145,19 +148,13 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 	bus_t = parse_fields(buf, subtree, states_bus, 40, 18, "BUS")
 
 	for field_idx = 58, 62 do
-		field_text = statefield_table[field_idx]
-		if not field_text then
+		s = switch_table[field_idx]
+		if not s then
 			subtree:add_le(u32, buf(field_idx*4,4)):append_text(string.format(' (field #%u)', field_idx))
 		else
-			subtree:add(bflag, buf(field_idx*4,4)):append_text(string.format(' (%s)', field_text))
+			subtree:add(s.pf, buf(field_idx*4,4))
 		end
 	end
---	-- info colum : always start with seq number
---	pinfo.cols.info = string.format('seq=%u', seq_id_uint)
---	-- generic command header.
---	pinfo.cols.info:append(string.format(', CMD=0x%02X (%s)', cmd_id_uint, cmdstring))
-
---	subtree:add(cmd, buf(8,4)):append_text(string.format(' (%s)', cmdstring ))
 
 	return length
 end
