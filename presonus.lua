@@ -16,16 +16,18 @@
 studiousb_protocol = Proto("studiousb", "Presonus StudioUSB protocol")
 
 -- all fields must be 'registered' even if they may be missing e.g. payload
-seq_id = ProtoField.uint32("studiousb.seq_id" , "seq_id" )
 -- not sure how to combine this inline LUT with the later sel_table[]
 sel = ProtoField.uint32("studiousb.sel" , "sel" , base.HEX, {
 	[0] = "device",
 	[0x64] = "mixer",
 	[0x65] = "output",
 })
+-- generic field for mixer controls
+volume = ProtoField.uint32("studiousb.volume" , "volume" , base.DEC)
+
 u32 = ProtoField.uint32("studiousb.u32", "generic u32", base.HEX)
 
-studiousb_protocol.fields = { seq_id, sel, u32}
+studiousb_protocol.fields = { sel, volume, u32}
 
 -- not sure if this is a great idea ; add proper unique fields for everything.
 -- One advantage is to allow plotting values in wireshark !
@@ -111,15 +113,16 @@ function dis_cmdreq(buf, pinfo, tree)
 	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', fb))
 	subtree:add_le(u32, buf(16,4))
 	subtree:add_le(u32, buf(20,4))
-	subtree:add_le(u32, buf(24,4))
 	selstring = sel_table[selector].name
 	if (f1 == CMDREQ_MARKER) and (f2 == CMDREQ_SIZE) then
-		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u c=0x%X d=0x%X e=0x%X',
+		subtree:add_le(volume, buf(24,4))
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u c=0x%X d=0x%X vol=%u',
 			selector, selstring, fb, fc, fd, fe))
 	else
 		-- unusual F1 or F2 : show all
 		subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', f1))
 		subtree:add_le(u32, buf(12,4)):set_text(string.format('F2(len): %X', f2))
+		subtree:add_le(u32, buf(24,4)) --field e
 		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X c=0x%X d=0x%X e=0x%X',
 			selector, selstring, fb, f1, f2, fc, fd, fe))
 	end
