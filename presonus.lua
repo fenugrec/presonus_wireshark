@@ -91,6 +91,20 @@ local function initLog(tree, proto)
 end
 
 -- ********************************
+-- ugh, 'forward' decls ?
+
+-- SET_STATE request; 252 bytes payload
+function dis_setstate(buf, pinfo, tree)
+	length = buf:len()
+	if length ~= 252 then return 0 end
+	log('dis_setstate')
+
+	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
+	annotate_header(buf, pinfo, subtree)
+	return length
+end
+
+-- ********************************
 -- some defs, taken from kernel driver
 
 -- field 'a'
@@ -102,7 +116,7 @@ sel_table = {
 
 req_codes = {
 	[160] = {name="SC1810C_CMD_REQ"},
-	[161] = {name="SC1810C_SET_STATE_REQ"},
+	[161] = {name="SC1810C_SET_STATE_REQ", handler=dis_setstate},
 	[162] = {name="SC1810C_GET_STATE_REQ"},
 }
 
@@ -122,6 +136,7 @@ usb_tt = Field.new("usb.transfer_type")
 usb_dir = Field.new("usb.endpoint_address.direction")
 usb_breq = Field.new("usb.setup.bRequest")
 usb_respdata = Field.new("usb.control.Response")
+usb_df = Field.new("usb.data_fragment")
 
 -- ****************************************
 -- 'core' of the dissector
@@ -132,7 +147,7 @@ usb_respdata = Field.new("usb.control.Response")
 -- STATE packets : sizeof=63*uint32 = 252B
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
-	local log = initLog(tree,studiousb_protocol)
+	log = initLog(tree,studiousb_protocol)
 -- ok	log(string.format('len %u', length))
 -- X	if pinfo.usb then log('usb') end
 -- ok	if pinfo.visited then log('vis') end
@@ -146,7 +161,12 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 		usbr = usb_breq().value
 		log(string.format('URB_SUBMIT CTL OUT'))
 		annotate_req(pinfo, usbr)
-		return length
+		local req = req_codes[usbr]
+		if req and req.handler then
+			return req.handler(usb_df().range, pinfo, tree)
+		else
+			return length
+		end
 	end
 	if (urbt == 83) and (usbf == 2) and (usbdir == 1) then
 		usbr = usb_breq().value
@@ -173,25 +193,31 @@ function annotate_req(pinfo, breq)
 	end
 end
 
-
-function dis_state_response(buf, pinfo, tree)
-	length = buf:len()
-	if length ~= 252 then return 0 end
-
-	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
-
+-- for the 252-byte frames, there is 'always' a common header ?
+function annotate_header(buf, pinfo, subtree)
 	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
 	local field_b = buf(4,4):le_uint()
 	local field_f1 = buf(8,4):le_uint()
 	local field_f2 = buf(12,4):le_uint()
 
 	subtree:add(sel, buf(0,4))
-	selstring = sel_table[selector].name
-	pinfo.cols.info:append(string.format(';sel %X(%s) state response', selector, selstring))
 	subtree:add(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
 	-- TODO : validate F1 or other
 	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
 	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
+	selstring = sel_table[selector].name
+	pinfo.cols.info:append(string.format(';sel %X(%s), b=%X F1=%X F2=%X',
+		selector, selstring, field_b, field_f1, field_f2))
+
+end
+
+-- response to GET_STATE_REQ : 252 bytes, including levels and switch status
+function dis_state_response(buf, pinfo, tree)
+	length = buf:len()
+	if length ~= 252 then return 0 end
+
+	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
+	annotate_header(buf, pinfo, subtree)
 
 	-- make subtrees for groups of channel volumes
 	in_t = parse_fields(buf, subtree, states_in, 4, 8, "IN")
