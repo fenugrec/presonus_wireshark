@@ -157,7 +157,7 @@ usb_df = Field.new("usb.data_fragment")
 -- STATE packets : sizeof=63*uint32 = 252B
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
-	if usb_isvendor().value ~= 2 then
+	if usb_isvendor() and usb_isvendor().value ~= 2 then
 		-- not a Vendor request ? don't parse
 		return 0
 	end
