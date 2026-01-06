@@ -134,6 +134,7 @@ SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
 usb_ut = Field.new("usb.urb_type")
 usb_tt = Field.new("usb.transfer_type")
 usb_dir = Field.new("usb.endpoint_address.direction")
+usb_isvendor = Field.new("usb.bmRequestType.type")
 usb_breq = Field.new("usb.setup.bRequest")
 usb_respdata = Field.new("usb.control.Response")
 usb_df = Field.new("usb.data_fragment")
@@ -147,6 +148,10 @@ usb_df = Field.new("usb.data_fragment")
 -- STATE packets : sizeof=63*uint32 = 252B
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
+	if usb_isvendor().value ~= 2 then
+		-- not a Vendor request ? don't parse
+		return 0
+	end
 	log = initLog(tree,studiousb_protocol)
 -- ok	log(string.format('len %u', length))
 -- X	if pinfo.usb then log('usb') end
@@ -154,7 +159,7 @@ function studiousb_protocol.dissector(buf, pinfo, tree)
 	urbt = usb_ut().value
 	usbf = usb_tt().value
 	usbdir = usb_dir().value
-	log(string.format("urbtype %u, tt %u, dir %u", urbt, usbf, usbdir))
+	--log(string.format("urbtype %u, tt %u, dir %u", urbt, usbf, usbdir))
 
 	-- TODO: how to use nice enums like 'URB_COMPLETE' instead of hardcoded val ?
 	if (urbt == 83) and (usbf == 2) and (usbdir == 0) then
