@@ -113,7 +113,7 @@ function dis_cmdreq(buf, pinfo, tree)
 	subtree:add_le(u32, buf(20,4))
 	subtree:add_le(u32, buf(24,4))
 	selstring = sel_table[selector].name
-	if (f1 == SC1810C_CMD_F1) and (f2 == SC1810C_CMD_F2) then
+	if (f1 == CMDREQ_MARKER) and (f2 == CMDREQ_SIZE) then
 		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u c=0x%X d=0x%X e=0x%X',
 			selector, selstring, fb, fc, fd, fe))
 	else
@@ -171,8 +171,8 @@ req_codes = {
 	[162] = {name="SC1810C_GET_STATE_REQ"},
 }
 
-SC1810C_CMD_F1 = 0x50617269
-SC1810C_CMD_F2 = 0x14
+CMDREQ_MARKER = 0x50617269
+CMDREQ_SIZE = 0x14
 
 MARKER_DEMS = 0x64656D73
 SETSTATE_SIZE = 0xf4
