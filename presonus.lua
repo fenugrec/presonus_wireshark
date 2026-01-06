@@ -99,17 +99,59 @@ function dis_cmdreq(buf, pinfo, tree)
 	if length ~= 7*4 then return 0 end
 
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
-	annotate_header(buf, pinfo, subtree)
+	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
+	local fb = buf(4,4):le_uint()
+	local f1 = buf(8,4):le_uint()
+	local f2 = buf(12,4):le_uint()
+	local fc = buf(16,4):le_uint()
+	local fd = buf(20,4):le_uint()
+	local fe = buf(24,4):le_uint()
+
+	subtree:add_le(sel, buf(0,4))
+	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', fb))
+	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', f1))
+	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2(len): %X', f2))
+	subtree:add_le(u32, buf(16,4))
+	subtree:add_le(u32, buf(20,4))
+	subtree:add_le(u32, buf(24,4))
+	selstring = sel_table[selector].name
+	if (f1 == SC1810C_CMD_F1) and (f2 == SC1810C_CMD_F2) then
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u c=0x%X d=0x%X e=0x%X',
+			selector, selstring, fb, fc, fd, fe))
+	else
+		-- unusual F1 or F2 : show all
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X c=0x%X d=0x%X e=0x%X',
+			selector, selstring, fb, f1, f2, fc, fd, fe))
+	end
 	return length
 end
 
 -- SET_STATE request; 252 bytes payload
+-- this is maybe more aptly named "prepare state data" (which is subsequently retrieved with GET_STATE
 function dis_setstate(buf, pinfo, tree)
 	length = buf:len()
 	if length ~= 252 then return 0 end
 
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
-	annotate_header(buf, pinfo, subtree)
+	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
+	local field_b = buf(4,4):le_uint()
+	local f1 = buf(8,4):le_uint()
+	local f2 = buf(12,4):le_uint()
+
+	selstring = sel_table[selector].name
+
+	subtree:add_le(sel, buf(0,4))
+	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
+	if (f1 == MARKER_DEMS) and (f2 == SC1810C_CMD_F2) then
+		-- TODO : validate that the rest of the payload is all 0 ?
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u',
+			selector, selstring, fb, fc, fd, fe))
+	else
+		subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
+		subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X',
+			selector, selstring, field_b, f1, f2))
+	end
 	return length
 end
 
@@ -132,11 +174,9 @@ req_codes = {
 SC1810C_CMD_F1 = 0x50617269
 SC1810C_CMD_F2 = 0x14
 
-SC1810C_SET_STATE_F1 = 0x64656D73
-SC1810C_SET_STATE_F2 = 0xF4
+MARKER_DEMS = 0x64656D73
+SETSTATE_SIZE = 0xf4
 
-SC1810C_GET_STATE_F1 = SC1810C_SET_STATE_F1
-SC1810C_GET_STATE_F2 = SC1810C_SET_STATE_F2
 
 -- ****************************************
 -- field extractors so we can interpret frames 'correctly'
