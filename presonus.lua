@@ -18,7 +18,7 @@ studiousb_protocol = Proto("studiousb", "Presonus StudioUSB protocol")
 -- all fields must be 'registered' even if they may be missing e.g. payload
 seq_id = ProtoField.uint32("studiousb.seq_id" , "seq_id" )
 -- not sure how to combine this inline LUT with the later sel_table[]
-sel = ProtoField.uint32("studiousb.sel" , "sel" , base.DEC, {
+sel = ProtoField.uint32("studiousb.sel" , "sel" , base.HEX, {
 	[0] = "device",
 	[0x64] = "mixer",
 	[0x65] = "output",
@@ -93,11 +93,20 @@ end
 -- ********************************
 -- ugh, 'forward' decls ?
 
+-- CMD_REQ request;
+function dis_cmdreq(buf, pinfo, tree)
+	length = buf:len()
+	if length ~= 7*4 then return 0 end
+
+	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
+	annotate_header(buf, pinfo, subtree)
+	return length
+end
+
 -- SET_STATE request; 252 bytes payload
 function dis_setstate(buf, pinfo, tree)
 	length = buf:len()
 	if length ~= 252 then return 0 end
-	log('dis_setstate')
 
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
 	annotate_header(buf, pinfo, subtree)
@@ -115,7 +124,7 @@ sel_table = {
 }
 
 req_codes = {
-	[160] = {name="SC1810C_CMD_REQ"},
+	[160] = {name="SC1810C_CMD_REQ", handler=dis_cmdreq},
 	[161] = {name="SC1810C_SET_STATE_REQ", handler=dis_setstate},
 	[162] = {name="SC1810C_GET_STATE_REQ"},
 }
@@ -205,13 +214,13 @@ function annotate_header(buf, pinfo, subtree)
 	local field_f1 = buf(8,4):le_uint()
 	local field_f2 = buf(12,4):le_uint()
 
-	subtree:add(sel, buf(0,4))
-	subtree:add(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
+	subtree:add_le(sel, buf(0,4))
+	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
 	-- TODO : validate F1 or other
 	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
 	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
 	selstring = sel_table[selector].name
-	pinfo.cols.info:append(string.format(';sel %X(%s), b=%X F1=%X F2=%X',
+	pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X',
 		selector, selstring, field_b, field_f1, field_f2))
 
 end
