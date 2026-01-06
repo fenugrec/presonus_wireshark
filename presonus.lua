@@ -109,8 +109,6 @@ function dis_cmdreq(buf, pinfo, tree)
 
 	subtree:add_le(sel, buf(0,4))
 	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', fb))
-	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', f1))
-	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2(len): %X', f2))
 	subtree:add_le(u32, buf(16,4))
 	subtree:add_le(u32, buf(20,4))
 	subtree:add_le(u32, buf(24,4))
@@ -120,6 +118,8 @@ function dis_cmdreq(buf, pinfo, tree)
 			selector, selstring, fb, fc, fd, fe))
 	else
 		-- unusual F1 or F2 : show all
+		subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', f1))
+		subtree:add_le(u32, buf(12,4)):set_text(string.format('F2(len): %X', f2))
 		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X c=0x%X d=0x%X e=0x%X',
 			selector, selstring, fb, f1, f2, fc, fd, fe))
 	end
@@ -142,7 +142,7 @@ function dis_setstate(buf, pinfo, tree)
 
 	subtree:add_le(sel, buf(0,4))
 	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
-	if (f1 == MARKER_DEMS) and (f2 == SC1810C_CMD_F2) then
+	if (f1 == MARKER_DEMS) and (f2 == SETSTATE_SIZE) then
 		-- TODO : validate that the rest of the payload is all 0 ?
 		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u',
 			selector, selstring, fb, fc, fd, fe))
@@ -247,23 +247,6 @@ function annotate_req(pinfo, breq)
 	end
 end
 
--- for the 252-byte frames, there is 'always' a common header ?
-function annotate_header(buf, pinfo, subtree)
-	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
-	local field_b = buf(4,4):le_uint()
-	local field_f1 = buf(8,4):le_uint()
-	local field_f2 = buf(12,4):le_uint()
-
-	subtree:add_le(sel, buf(0,4))
-	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
-	-- TODO : validate F1 or other
-	subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
-	subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
-	selstring = sel_table[selector].name
-	pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X',
-		selector, selstring, field_b, field_f1, field_f2))
-
-end
 
 -- response to GET_STATE_REQ : 252 bytes, including levels and switch status
 function dis_state_response(buf, pinfo, tree)
@@ -271,7 +254,25 @@ function dis_state_response(buf, pinfo, tree)
 	if length ~= 252 then return 0 end
 
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
-	annotate_header(buf, pinfo, subtree)
+	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
+	local field_b = buf(4,4):le_uint()
+	local f1 = buf(8,4):le_uint()
+	local f2 = buf(12,4):le_uint()
+
+	subtree:add_le(sel, buf(0,4))
+	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
+	selstring = sel_table[selector].name
+
+	if (f1 == MARKER_DEMS) and (f2 == SETSTATE_SIZE) then
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X',
+			selector, selstring, field_b))
+	else
+		--unusual marker/size
+		subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', f1))
+		subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', f2))
+		pinfo.cols.info:append(string.format(';sel %X(%s), b=0x%X F1=0x%X F2=0x%X c=0x%X d=0x%X e=0x%X',
+			selector, selstring, fb, f1, f2, fc, fd, fe))
+	end
 
 	-- make subtrees for groups of channel volumes
 	in_t = parse_fields(buf, subtree, states_in, 4, 8, "IN")
