@@ -137,18 +137,18 @@ function dis_setstate(buf, pinfo, tree)
 
 	local subtree = tree:add(studiousb_protocol, buf(), "StudioUSB Protocol Data")
 	local selector = buf(0,4):le_uint() -- field 'a' in kernel code
-	local field_b = buf(4,4):le_uint()
+	local fb = buf(4,4):le_uint()
 	local f1 = buf(8,4):le_uint()
 	local f2 = buf(12,4):le_uint()
 
 	selstring = sel_table[selector].name
 
 	subtree:add_le(sel, buf(0,4))
-	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', field_b))
+	subtree:add_le(u32, buf(4,4)):set_text(string.format('b field: %X', fb))
 	if (f1 == MARKER_DEMS) and (f2 == SETSTATE_SIZE) then
 		-- TODO : validate that the rest of the payload is all 0 ?
 		pinfo.cols.info:append(string.format(';sel %X(%s), b=%u',
-			selector, selstring, fb, fc, fd, fe))
+			selector, selstring, fb))
 	else
 		subtree:add_le(u32, buf(8,4)):set_text(string.format('F1 marker: %X', field_f1))
 		subtree:add_le(u32, buf(12,4)):set_text(string.format('F2 marker: %X', field_f2))
@@ -196,8 +196,6 @@ usb_df = Field.new("usb.data_fragment")
 -- loosely based on netdaq dissector
 -- ret 0 if error, (len) if succesfully parsed
 --
--- CTL packets : sizeof=7*uint32 =28 B?
--- STATE packets : sizeof=63*uint32 = 252B
 function studiousb_protocol.dissector(buf, pinfo, tree)
 	length = buf:len()
 	if usb_isvendor() and usb_isvendor().value ~= 2 then
